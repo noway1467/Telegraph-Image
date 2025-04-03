@@ -4,26 +4,19 @@ export async function onRequest(context) {
 
   let fileUrl = 'https://telegra.ph/' + url.pathname + url.search;
 
-  // Telegram 文件路径处理（原有逻辑）
+  // Telegram 文件路径处理
   if (url.pathname.length > 39) {
-    const formdata = new FormData();
-    formdata.append("file_id", url.pathname);
-
-    const requestOptions = { method: "POST", body: formdata, redirect: "follow" };
     const filePath = await getFilePath(env, url.pathname.split(".")[0].split("/")[2]);
     fileUrl = `https://api.telegram.org/file/bot${env.TG_Bot_Token}/${filePath}`;
   }
 
-  // 获取原始响应
   const response = await fetch(fileUrl, {
     method: request.method,
     headers: request.headers,
     body: request.body,
   });
 
-  //-----------------------------------------
-  // 关键修复：强制设置正确的 Content-Type 和头信息
-  //-----------------------------------------
+  // 设置正确的 Content-Type 头
   const fileExtension = url.pathname.split('.').pop().toLowerCase();
   const mimeTypes = {
     png: 'image/png',
@@ -35,18 +28,16 @@ export async function onRequest(context) {
   const contentType = mimeTypes[fileExtension] || 'application/octet-stream';
   const newHeaders = new Headers(response.headers);
   newHeaders.set('Content-Type', contentType);
-  newHeaders.delete('Content-Disposition'); // 解除强制下载头
+  newHeaders.delete('Content-Disposition');
 
-  // 创建新的响应对象（用于后续返回）
   const modifiedResponse = new Response(response.body, {
     status: response.status,
     headers: newHeaders,
   });
 
-  // 白名单/黑名单处理（原有逻辑）
   if (response.ok) {
-    if (request.headers.get('Referer') === `${url.origin}/admin') {
-      return modifiedResponse; // 使用修正后的响应
+    if (request.headers.get('Referer') === `${url.origin}/admin`) {
+      return modifiedResponse;
     }
 
     if (env.img_url) {
@@ -60,10 +51,13 @@ export async function onRequest(context) {
         };
 
         if (metadata.ListType === "White") {
-          return modifiedResponse; // 使用修正后的响应
+          return modifiedResponse;
         } else if (metadata.ListType === "Block" || metadata.Label === "adult") {
+          // 修复点：正确处理字符串模板语法
           const referer = request.headers.get('Referer');
-          const redirectUrl = referer ? "https://static-res.pages.dev/teleimage/img-block-compressed.png" : `${url.origin}/block-img.html`;
+          const redirectUrl = referer 
+            ? "https://static-res.pages.dev/teleimage/img-block-compressed.png" 
+            : `${url.origin}/block-img.html`;
           return Response.redirect(redirectUrl, 302);
         }
 
@@ -77,7 +71,7 @@ export async function onRequest(context) {
       }
     }
 
-    // 内容审查（原有逻辑）
+    // 内容审查逻辑
     const time = Date.now();
     if (env.ModerateContentApiKey) {
       const moderateResponse = await fetch(`https://api.moderatecontent.com/moderate/?key=${env.ModerateContentApiKey}&url=https://telegra.ph${url.pathname}${url.search}`);
@@ -99,19 +93,17 @@ export async function onRequest(context) {
     }
   }
 
-  return modifiedResponse; // 最终返回修正后的响应
+  return modifiedResponse;
 }
 
-// getFilePath 函数保持不变
 async function getFilePath(env, file_id) {
   try {
     const url = `https://api.telegram.org/bot${env.TG_Bot_Token}/getFile?file_id=${file_id}`;
-    const res = await fetch(url, { method: 'GET' });
+    const res = await fetch(url);
     if (!res.ok) return null;
-    const { ok, result } = await res.json();
-    return ok ? result.file_path : null;
+    const { result } = await res.json();
+    return result.file_path;
   } catch (error) {
-    console.error('Error:', error);
     return null;
   }
 }
